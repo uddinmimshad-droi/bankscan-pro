@@ -1,3 +1,4 @@
+import gc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -83,6 +84,9 @@ def extract_pdf_text(
                             thread_count=1,
                         )
                         text = pytesseract.image_to_string(images[0], config="--psm 6") if images else ""
+                        if images:
+                            for img in images:
+                                img.close()
                         if looks_like_garbage_text(text):
                             raise ValueError("OCR returned no usable text.")
                         ocr_pages += 1
@@ -95,6 +99,9 @@ def extract_pdf_text(
                     digital_pages += 1
 
                 pages.append(PageExtraction(index, text, method, tables, error))
+                page.flush_cache()
+                if index % 10 == 0:
+                    gc.collect()
     except PermissionError:
         raise
     except InterruptedError:
