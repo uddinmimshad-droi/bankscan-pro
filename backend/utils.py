@@ -60,11 +60,11 @@ def decimal_to_float(value: Optional[Decimal]) -> Optional[float]:
     return float(value) if value is not None else None
 
 
-def looks_like_garbage_text(text: str) -> bool:
+def looks_like_garbage_text(text: str, image_count: int = 0) -> bool:
     text = text or ""
     compact = re.sub(r"\s+", "", text)
     if len(compact) < 40:
-        return True
+        return image_count > 0
     readable = sum(ch.isalnum() for ch in compact)
     return readable / max(len(compact), 1) < 0.45
 

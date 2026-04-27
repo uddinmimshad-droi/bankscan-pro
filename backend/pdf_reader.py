@@ -70,14 +70,15 @@ def extract_pdf_text(
                 except Exception as exc:
                     error = f"pdfplumber failed: {exc}"
 
-                if looks_like_garbage_text(text):
+                if looks_like_garbage_text(text, len(page.images)):
                     method = "ocr"
                     try:
                         images = convert_from_path(
                             str(pdf_path),
-                            dpi=300,
+                            dpi=150,
                             first_page=index,
                             last_page=index,
+
                             fmt="png",
                             thread_count=1,
                         )
