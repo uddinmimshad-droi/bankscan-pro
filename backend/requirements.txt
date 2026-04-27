@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pdfplumber
+PyMuPDF
+pdf2image
+pytesseract
+Pillow
+openpyxl
+python-multipart
+uuid

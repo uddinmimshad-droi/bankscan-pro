@@ -1,0 +1,12 @@
+backend/uploads/
+backend/outputs/
+backend/__pycache__/
+backend/.venv/
+frontend/node_modules/
+.vercel/
+.env
+.env.local
+*.pyc
+
+.vercel
+.node_portable/

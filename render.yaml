@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: bankscan-pro-api
+    env: docker
+    rootDir: backend
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: CORS_ORIGINS
+        value: "*"

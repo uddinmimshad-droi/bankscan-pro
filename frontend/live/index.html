@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BankScan Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body class="bg-[#eef4fb]">
+    <div id="root"></div>
+    <script type="text/babel">
+      const API_BASE_URL = localStorage.getItem("bankscanApiUrl") || window.BANKSCAN_API_URL || "http://localhost:8000";
+
+      function money(value) {
+        if (value === null || value === undefined) return "";
+        return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function formatBytes(bytes = 0) {
+        if (!bytes) return "0 B";
+        const units = ["B", "KB", "MB", "GB"];
+        const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+      }
+
+      function App() {
+        const savedUser = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("bankscanUser") || "null");
+          } catch {
+            return null;
+          }
+        })();
+        const [user, setUser] = React.useState(savedUser);
+        const [jobId, setJobId] = React.useState(null);
+        const [fileInfo, setFileInfo] = React.useState(null);
+        const [status, setStatus] = React.useState(null);
+        const [preview, setPreview] = React.useState(null);
+        const [error, setError] = React.useState("");
+        const [isUploading, setIsUploading] = React.useState(false);
+        const [dragging, setDragging] = React.useState(false);
+        const inputRef = React.useRef(null);
+
+        function handleLogin(nextUser) {
+          localStorage.setItem("bankscanUser", JSON.stringify(nextUser));
+          setUser(nextUser);
+        }
+
+        async function uploadPdf(file) {
+          if (!file || file.type !== "application/pdf") {
+            setError("Please choose a PDF file.");
+            return;
+          }
+          setError("");
+          setPreview(null);
+          setStatus(null);
+          setIsUploading(true);
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const response = await fetch(`${API_BASE_URL}/upload`, { method: "POST", body: formData });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || "Upload failed.");
+            setFileInfo(data);
+            setJobId(data.job_id);
+            setStatus({ status: "queued", progress: 0, message: "Queued for processing...", total_pages: data.page_count });
+          } catch (err) {
+            setError(err.message || "Upload failed. Please try another PDF.");
+          } finally {
+            setIsUploading(false);
+          }
+        }
+
+        React.useEffect(() => {
+          if (!jobId) return undefined;
+          let cancelled = false;
+          const timer = setInterval(async () => {
+            try {
+              const statusResponse = await fetch(`${API_BASE_URL}/status/${jobId}`);
+              const nextStatus = await statusResponse.json();
+              if (!statusResponse.ok) throw new Error(nextStatus.detail || "Unable to fetch status.");
+              if (cancelled) return;
+              setStatus(nextStatus);
+              if (nextStatus.status === "failed") {
+                setError(nextStatus.error || "Processing failed.");
+                clearInterval(timer);
+              }
+              if (nextStatus.status === "completed") {
+                clearInterval(timer);
+                const previewResponse = await fetch(`${API_BASE_URL}/preview/${jobId}`);
+                const nextPreview = await previewResponse.json();
+                if (!previewResponse.ok) throw new Error(nextPreview.detail || "Unable to load preview.");
+                if (!cancelled) setPreview(nextPreview);
+              }
+            } catch (err) {
+              if (!cancelled) setError(err.message || "Unable to fetch job status.");
+            }
+          }, 1200);
+          return () => {
+            cancelled = true;
+            clearInterval(timer);
+          };
+        }, [jobId]);
+
+        if (!user) return <LoginPage onLogin={handleLogin} />;
+
+        return (
+          <main className="min-h-screen bg-[#eef4fb] text-slate-950">
+            <div className="overflow-hidden bg-[#2447b8] text-white">
+              <div className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_390px] lg:px-8">
+                <div className="flex min-h-[320px] flex-col justify-between">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-200">BankScan Pro</p>
+                      <h1 className="mt-4 max-w-2xl text-4xl font-bold leading-tight sm:text-5xl">
+                        Smart bank statement analysis
+                      </h1>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { localStorage.removeItem("bankscanUser"); setUser(null); }}
+                      className="hidden rounded-md border border-white/20 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 sm:block"
+                    >
+                      Change user
+                    </button>
+                  </div>
+                  <div>
+                    <p className="mt-5 max-w-2xl text-base leading-7 text-blue-100">
+                      Upload your PDF, protect debit and credit columns, preview clean transactions, and export a professional Excel workbook.
+                    </p>
+                    <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                      <MiniStat value="1004" label="rows tested" />
+                      <MiniStat value="43" label="pages handled" />
+                      <MiniStat value="XLSX" label="ready output" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <div className="rounded-[32px] border border-white/15 bg-slate-950 p-4 shadow-2xl">
+                    <div className="mx-auto mb-4 h-7 w-28 rounded-full bg-black"></div>
+                    <div className="rounded-[24px] bg-[#152055] p-5">
+                      <div className="rounded-2xl border border-cyan-300/30 bg-cyan-300/10 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">Welcome</p>
+                        <h2 className="mt-3 text-2xl font-bold leading-snug">Hi {user.name}</h2>
+                        <p className="mt-3 text-sm leading-6 text-blue-100">
+                          This is Mimshad Uddin, the builder of this site. Hope this site helps you on your bank analysis.
+                        </p>
+                      </div>
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl bg-white p-4 text-slate-950">
+                          <p className="text-xs font-semibold uppercase text-slate-500">Debit safety</p>
+                          <p className="mt-2 text-2xl font-bold text-red-600">DR</p>
+                        </div>
+                        <div className="rounded-2xl bg-white p-4 text-slate-950">
+                          <p className="text-xs font-semibold uppercase text-slate-500">Credit safety</p>
+                          <p className="mt-2 text-2xl font-bold text-emerald-600">CR</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { localStorage.removeItem("bankscanUser"); setUser(null); }}
+                    className="mt-4 rounded-md border border-white/20 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 sm:hidden"
+                  >
+                    Change user
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+              <section className="grid gap-4 md:grid-cols-3">
+                <InfoCard title="Hybrid reading" body="Digital PDF tables are read first, with OCR fallback for scanned pages." />
+                <InfoCard title="Debit/Credit protection" body="Bank columns are preserved so withdrawals and deposits stay on the correct side." />
+                <InfoCard title="Excel ready" body="Download a formatted workbook with totals, preview rows, and summary metrics." />
+              </section>
+
+              <section
+                className={`rounded-lg border-2 border-dashed bg-white p-8 shadow-sm transition ${dragging ? "border-cyan-500 bg-cyan-50" : "border-slate-300"}`}
+                onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(event) => { event.preventDefault(); setDragging(false); uploadPdf(event.dataTransfer.files?.[0]); }}
+              >
+                <input ref={inputRef} type="file" accept="application/pdf" className="hidden" onChange={(event) => uploadPdf(event.target.files?.[0])} />
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-[#2447b8] text-2xl font-bold text-white shadow-lg">PDF</div>
+                  <div>
+                    <h2 className="text-2xl font-semibold text-slate-950">Upload your bank statement</h2>
+                    <p className="mt-1 text-sm text-slate-600">Drag a PDF here or choose a file up to 200 pages.</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isUploading || status?.status === "processing"}
+                    onClick={() => inputRef.current?.click()}
+                    className="rounded-md bg-[#2447b8] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1d3892] disabled:bg-slate-400"
+                  >
+                    Choose PDF
+                  </button>
+                </div>
+                {fileInfo && (
+                  <div className="mt-6 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 sm:grid-cols-3">
+                    <div><span className="block text-xs font-semibold uppercase text-slate-500">File</span>{fileInfo.file_name}</div>
+                    <div><span className="block text-xs font-semibold uppercase text-slate-500">Size</span>{formatBytes(fileInfo.file_size)}</div>
+                    <div><span className="block text-xs font-semibold uppercase text-slate-500">Pages</span>{fileInfo.page_count}</div>
+                  </div>
+                )}
+              </section>
+
+              {error && <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"><strong>Error:</strong> {error}</section>}
+
+              {status && (
+                <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-950">Processing</h2>
+                      <p className="text-sm text-slate-600">{status.message}</p>
+                    </div>
+                    <span className="rounded-md bg-slate-100 px-3 py-1 text-sm font-medium capitalize text-slate-700">{status.status}</span>
+                  </div>
+                  <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-[#2447b8] transition-all" style={{ width: `${Math.max(0, Math.min(status.progress || 0, 100))}%` }}></div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap justify-between gap-2 text-sm text-slate-600">
+                    <span>{status.progress || 0}% complete</span>
+                    <span>Page {status.current_page || 0} of {status.total_pages || status.page_count || 0}</span>
+                  </div>
+                </section>
+              )}
+
+              {status && (
+                <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="grid gap-4 sm:grid-cols-4">
+                    <Stat label="Pages processed" value={status.pages_processed || status.total_pages || 0} />
+                    <Stat label="Transactions" value={status.transactions_found || preview?.total || 0} />
+                    <Stat label="OCR pages" value={status.ocr_pages || 0} />
+                    <Stat label="Digital pages" value={status.digital_pages || 0} />
+                  </div>
+                  {status.status === "completed" && (
+                    <a href={`${API_BASE_URL}/download/${jobId}`} className="mt-5 inline-flex rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+                      Download Excel
+                    </a>
+                  )}
+                </section>
+              )}
+
+              {preview?.transactions?.length > 0 && (
+                <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-200 p-5">
+                    <h2 className="text-lg font-semibold text-slate-950">Transaction Preview</h2>
+                    <p className="text-sm text-slate-600">Showing first {preview.transactions.length} of {preview.total} rows.</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-950 text-white">
+                        <tr>{["TRANSACTION DATE", "PARTICULARS", "WITHDRAW", "DEPOSIT", "BALANCE"].map((header) => <th key={header} className="px-4 py-3 text-left font-semibold">{header}</th>)}</tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {preview.transactions.map((tx, index) => (
+                          <tr key={`${tx.transaction_date}-${index}`} className={index % 2 ? "bg-slate-50" : "bg-white"}>
+                            <td className="whitespace-nowrap px-4 py-3">{tx.transaction_date}</td>
+                            <td className="min-w-80 px-4 py-3">{tx.particulars}</td>
+                            <td className="whitespace-nowrap px-4 py-3 font-medium text-red-700">{money(tx.withdraw)}</td>
+                            <td className="whitespace-nowrap px-4 py-3 font-medium text-emerald-700">{money(tx.deposit)}</td>
+                            <td className="whitespace-nowrap px-4 py-3">{money(tx.balance)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+            </div>
+          </main>
+        );
+      }
+
+      function LoginPage({ onLogin }) {
+        const [form, setForm] = React.useState({ name: "", number: "", email: "" });
+        const [error, setError] = React.useState("");
+
+        function submit(event) {
+          event.preventDefault();
+          if (!form.name.trim() || !form.number.trim() || !form.email.trim()) {
+            setError("Please enter your name, number, and email address.");
+            return;
+          }
+          onLogin({
+            name: form.name.trim(),
+            number: form.number.trim(),
+            email: form.email.trim(),
+          });
+        }
+
+        return (
+          <main className="min-h-screen bg-[#eef4fb] px-4 py-8 text-slate-950">
+            <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+              <section className="rounded-[36px] bg-[#2447b8] p-8 text-white shadow-2xl">
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-200">BankScan Pro</p>
+                <h1 className="mt-4 max-w-3xl text-4xl font-bold leading-tight sm:text-5xl">Clean bank statement analysis, ready for Excel.</h1>
+                <p className="mt-5 max-w-2xl text-base leading-7 text-blue-100">
+                  Upload PDF statements, preserve debit and credit columns, preview transactions, and export a polished workbook for analysis.
+                </p>
+                <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                  <MiniStat value="200" label="page PDF support" />
+                  <MiniStat value="OCR" label="for scanned pages" />
+                  <MiniStat value="XLSX" label="formatted export" />
+                </div>
+                <div className="mt-8 rounded-[28px] border border-white/15 bg-slate-950 p-4">
+                  <div className="mx-auto mb-4 h-6 w-24 rounded-full bg-black"></div>
+                  <div className="rounded-2xl bg-white/10 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-200">Analysis dashboard</p>
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-white p-4 text-slate-950">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Withdraw</p>
+                        <p className="mt-2 text-2xl font-bold text-red-600">DR</p>
+                      </div>
+                      <div className="rounded-xl bg-white p-4 text-slate-950">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Deposit</p>
+                        <p className="mt-2 text-2xl font-bold text-emerald-600">CR</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-white/10 bg-white p-6 text-slate-950 shadow-2xl">
+                <h2 className="text-2xl font-bold">Enter your details</h2>
+                <p className="mt-1 text-sm text-slate-600">This helps personalize your BankScan Pro workspace.</p>
+                <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
+                  <Field label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} placeholder="Enter your name" />
+                  <Field label="Number" value={form.number} onChange={(value) => setForm({ ...form, number: value })} placeholder="Enter your mobile number" />
+                  <Field label="Email address" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} placeholder="Enter your email" />
+                  {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+                  <button type="submit" className="rounded-md bg-cyan-700 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-800">
+                    Continue to BankScan Pro
+                  </button>
+                </form>
+              </section>
+            </div>
+          </main>
+        );
+      }
+
+      function Field({ label, value, onChange, placeholder, type = "text" }) {
+        return (
+          <label className="block">
+            <span className="text-sm font-semibold text-slate-700">{label}</span>
+            <input
+              type={type}
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              placeholder={placeholder}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100"
+            />
+          </label>
+        );
+      }
+
+      function InfoCard({ title, body }) {
+        return (
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="font-semibold text-slate-950">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{body}</p>
+          </div>
+        );
+      }
+
+      function MiniStat({ value, label }) {
+        return (
+          <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+            <div className="text-2xl font-bold text-cyan-200">{value}</div>
+            <div className="mt-1 text-sm text-slate-300">{label}</div>
+          </div>
+        );
+      }
+
+      function Stat({ label, value }) {
+        return (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase text-slate-500">{label}</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-950">{value}</div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
