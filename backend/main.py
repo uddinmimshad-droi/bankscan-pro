@@ -104,6 +104,16 @@ def get_status(job_id: str):
     return safe_job
 
 
+@app.post("/cancel/{job_id}")
+def cancel_job(job_id: str):
+    job = _get_job(job_id)
+    if job["status"] in {"queued", "processing"}:
+        job["status"] = "cancelled"
+        job["message"] = "Processing cancelled by user."
+        job["error"] = "Cancelled by user."
+    return {"status": job["status"]}
+
+
 @app.get("/preview/{job_id}")
 def preview_transactions(job_id: str):
     job = _get_job(job_id)
@@ -137,6 +147,8 @@ def process_pdf_job(job_id: str, pdf_path: Path) -> None:
         job["status"] = "processing"
 
         def progress(current_page: int, total_pages: int, message: str) -> None:
+            if job["status"] == "cancelled":
+                raise InterruptedError("Job was cancelled by the user.")
             job["current_page"] = current_page
             job["total_pages"] = total_pages
             job["message"] = message
@@ -172,6 +184,15 @@ def process_pdf_job(job_id: str, pdf_path: Path) -> None:
                 "digital_pages": extraction.digital_pages,
                 "output_path": str(output_path),
                 "error": None,
+            }
+        )
+    except InterruptedError as exc:
+        job.update(
+            {
+                "status": "failed",
+                "message": "Processing cancelled.",
+                "progress": 100,
+                "error": str(exc),
             }
         )
     except Exception as exc:

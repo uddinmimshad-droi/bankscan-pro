@@ -97,6 +97,8 @@ def extract_pdf_text(
                 pages.append(PageExtraction(index, text, method, tables, error))
     except PermissionError:
         raise
+    except InterruptedError:
+        raise
     except Exception as exc:
         raise ValueError("Unable to read the PDF. It may be corrupted or unsupported.") from exc
 

@@ -28,3 +28,8 @@ export async function getPreview(jobId) {
 export function downloadUrl(jobId) {
   return `${API_BASE_URL}/download/${jobId}`;
 }
+
+export async function cancelJob(jobId) {
+  const { data } = await api.post(`/cancel/${jobId}`);
+  return data;
+}
