@@ -12,7 +12,7 @@
   <body class="bg-[#eef4fb]">
     <div id="root"></div>
     <script type="text/babel">
-      const API_BASE_URL = localStorage.getItem("bankscanApiUrl") || window.BANKSCAN_API_URL || "http://localhost:8000";
+      const API_BASE_URL = localStorage.getItem("bankscanApiUrl") || window.BANKSCAN_API_URL || "https://bankscan-pro.onrender.com";
 
       function money(value) {
         if (value === null || value === undefined) return "";
